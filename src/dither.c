@@ -5,20 +5,85 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 
-/* Kernel definitions */
+/* Kernel data */
+// Floyd‑Steinberg (width=3, height=3, kernelX=1, coef=16)
+static const unsigned char fs_kernel[3 * 3] = {0, 0, 7, 3, 5, 1, 0, 0, 0};
 
-// Stucki (default)
-static const unsigned char stucki_kernel[3][5] = {
-    {0, 0, 0, 8, 4}, {2, 4, 8, 4, 2}, {1, 2, 4, 2, 1}};
+// Jarvis (3x5, kernelX=2, coef=48)
+static const unsigned char jarvis_kernel[3 * 5] = {0, 0, 0, 7, 5, 3, 5, 7,
+                                                   5, 3, 1, 3, 5, 3, 1};
 
-// Floyd‑Steinberg
-// static const unsigned char fs_kernel[3][4] = {{0, 0, 7}, {3, 5, 1}, {0, 0, 0}};
-// For simplicity, implemented Stucki in default
-// TODO: add more kernel
+// Atkinson (3x4, kernelX=1, coef=8)
+static const unsigned char atkinson_kernel[3 * 4] = {0, 0, 1, 1, 1, 1,
+                                                     1, 0, 0, 1, 0, 0};
+
+// Burkes (3x5, kernelX=2, coef=32)
+static const unsigned char burkes_kernel[3 * 5] = {0, 0, 0, 8, 4, 2, 4, 8,
+                                                   4, 2, 0, 0, 0, 0, 0};
+
+// Stucki (3x5, kernelX=2, coef=42)
+static const unsigned char stucki_kernel[3 * 5] = {0, 0, 0, 8, 4, 2, 4, 8,
+                                                   4, 2, 1, 2, 4, 2, 1};
+
+// Sierra Lite (3x3, kernelX=1, coef=4)
+static const unsigned char sierra_lite_kernel[3 * 3] = {0, 0, 2, 1, 1,
+                                                        0, 0, 0, 0};
 
 int dither_row_cyclic(int i, int j, int rows) {
   (void)rows;
   return (i % 3 + 2 - j % 3) % 3;
+}
+
+void dither_init_params(DitherParams *params, const Palette *pal,
+                        KernelType kt) {
+  params->palette = *pal; /* shallow copy */
+  params->paletteRowFunc = dither_row_cyclic;
+
+  switch (kt) {
+  case KERNEL_FLOYD_STEINBERG:
+    params->coef = 16;
+    params->kernelX = 1;
+    params->kernelHeight = 3;
+    params->kernelWidth = 3;
+    params->kernel = fs_kernel;
+    break;
+  case KERNEL_JARVIS:
+    params->coef = 48;
+    params->kernelX = 2;
+    params->kernelHeight = 3;
+    params->kernelWidth = 5;
+    params->kernel = jarvis_kernel;
+    break;
+  case KERNEL_ATKINSON:
+    params->coef = 8;
+    params->kernelX = 1;
+    params->kernelHeight = 3;
+    params->kernelWidth = 4;
+    params->kernel = atkinson_kernel;
+    break;
+  case KERNEL_BURKES:
+    params->coef = 32;
+    params->kernelX = 2;
+    params->kernelHeight = 3;
+    params->kernelWidth = 5;
+    params->kernel = burkes_kernel;
+    break;
+  case KERNEL_STUCKI:
+  default:
+    params->coef = 42;
+    params->kernelX = 2;
+    params->kernelHeight = 3;
+    params->kernelWidth = 5;
+    params->kernel = stucki_kernel;
+    break;
+  case KERNEL_SIERRA_LITE:
+    params->coef = 4;
+    params->kernelX = 1;
+    params->kernelHeight = 3;
+    params->kernelWidth = 3;
+    params->kernel = sierra_lite_kernel;
+    break;
+  }
 }
 
 void dither_default_params(DitherParams *params, const Palette *pal) {

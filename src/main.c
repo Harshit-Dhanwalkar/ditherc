@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 // Flat palette - 3 rows x 8 cols
@@ -43,7 +44,52 @@ static int list_bmp_files(char ***filenames) {
   return count;
 }
 
-int main() {
+static KernelType parse_kernel(const char *arg) {
+  if (strcasecmp(arg, "floyd") == 0 || strcasecmp(arg, "fs") == 0)
+    return KERNEL_FLOYD_STEINBERG;
+  if (strcasecmp(arg, "jarvis") == 0)
+    return KERNEL_JARVIS;
+  if (strcasecmp(arg, "atkinson") == 0)
+    return KERNEL_ATKINSON;
+  if (strcasecmp(arg, "burkes") == 0)
+    return KERNEL_BURKES;
+  if (strcasecmp(arg, "stucki") == 0)
+    return KERNEL_STUCKI;
+  if (strcasecmp(arg, "sierra") == 0 || strcasecmp(arg, "sierralite") == 0)
+    return KERNEL_SIERRA_LITE;
+  fprintf(stderr, "Unknown kernel '%s', using Stucki.\n", arg);
+  return KERNEL_STUCKI;
+}
+
+static const char *kernel_to_string(KernelType kt) {
+  switch (kt) {
+  case KERNEL_FLOYD_STEINBERG:
+    return "floyd";
+  case KERNEL_JARVIS:
+    return "jarvis";
+  case KERNEL_ATKINSON:
+    return "atkinson";
+  case KERNEL_BURKES:
+    return "burkes";
+  case KERNEL_STUCKI:
+    return "stucki";
+  case KERNEL_SIERRA_LITE:
+    return "sierra";
+  default:
+    return "unknown";
+  }
+}
+
+int main(int argc, char **argv) {
+  KernelType kt = KERNEL_STUCKI; // Default kernel
+
+  // Parse command line: -k <kernel>
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
+      kt = parse_kernel(argv[++i]);
+    }
+  }
+
   ensure_directory("results");
 
   char **bmp_files = NULL;
@@ -54,9 +100,8 @@ int main() {
   }
 
   fprintf(stderr, "Available images:\n");
-  for (int i = 0; i < num_files; i++) {
+  for (int i = 0; i < num_files; i++)
     fprintf(stderr, "  %d. %s\n", i + 1, bmp_files[i]);
-  }
   fprintf(stderr, "Select image (1-%d): ", num_files);
   fflush(stderr);
 
@@ -69,26 +114,33 @@ int main() {
     return 1;
   }
 
-  char input_path[256];
+  char input_path[256], output_path[256];
   snprintf(input_path, sizeof(input_path), "images/%s", bmp_files[choice - 1]);
 
-  // Build output path: results/out_<filename>
-  char output_path[256];
-  const char *base = bmp_files[choice - 1];
-  snprintf(output_path, sizeof(output_path), "results/out_%s", base);
+  char stem[128];
+  strncpy(stem, bmp_files[choice - 1], sizeof(stem) - 1);
+  stem[sizeof(stem) - 1] = '\0';
+  char *dot = strrchr(stem, '.');
+  if (dot)
+    *dot = '\0';
 
-  // Free the file list
+  // Build output path with kernel name
+  const char *kname = kernel_to_string(kt);
+  snprintf(output_path, sizeof(output_path), "results/out_%s_%s.bmp", stem,
+           kname);
+
+  // Free list
   for (int i = 0; i < num_files; i++)
     free(bmp_files[i]);
   free(bmp_files);
 
-  // Load and dither
+  // Load image
   unsigned char *pixelsIn = NULL;
   unsigned int width, height;
   unsigned int err =
       loadbmp_decode_file(input_path, &pixelsIn, &width, &height, LOADBMP_RGBA);
   if (err) {
-    fprintf(stderr, "LoadBMP error: %u\n", err);
+    fprintf(stderr, "Load error: %u\n", err);
     return 1;
   }
 
@@ -98,10 +150,10 @@ int main() {
   pal.colors = my_palette_flat;
 
   DitherParams params;
-  dither_default_params(&params, &pal);
+  dither_init_params(&params, &pal, kt);
 
-  unsigned char *pixelsOut = (unsigned char *)malloc(width * height * 4);
-  unsigned char *indexArray = (unsigned char *)malloc(width * height);
+  unsigned char *pixelsOut = malloc(width * height * 4);
+  unsigned char *indexArray = malloc(width * height);
   if (!pixelsOut || !indexArray) {
     free(pixelsIn);
     free(pixelsOut);
@@ -111,16 +163,15 @@ int main() {
 
   dither_image(pixelsIn, width, height, &params, pixelsOut, indexArray);
 
-  // Write output BMP
   err =
       loadbmp_encode_file(output_path, pixelsOut, width, height, LOADBMP_RGBA);
-  if (err) {
-    fprintf(stderr, "Encode error: %u\n", err);
-  } else {
-    printf("Dithered image saved as: %s\n", output_path);
-  }
 
-  // Print C array header
+  if (err)
+    fprintf(stderr, "Encode error: %u\n", err);
+  else
+    fprintf(stderr, "Saved: %s (kernel %d)\n", output_path, kt);
+
+  // Print C array
   printf("int img_w = %u, img_h = %u;\n", width, height);
   printf("uint8_t img_buf[] = {");
   for (unsigned int i = 0; i < width * height; i++) {
